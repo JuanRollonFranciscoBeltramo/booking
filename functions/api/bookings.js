@@ -1,4 +1,22 @@
 
+function generateCancellationToken() {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+
+    return Array.from(bytes, byte =>
+        byte.toString(16).padStart(2, "0")
+    ).join("");
+}
+
+async function hashCancellationToken(token) {
+    const data = new TextEncoder().encode(token);
+    const hash = await crypto.subtle.digest("SHA-256", data);
+
+    return Array.from(new Uint8Array(hash), byte =>
+        byte.toString(16).padStart(2, "0")
+    ).join("");
+}
+
 export async function onRequestPost({ request, env }) {
     try {
         const body = await request.json();
@@ -151,40 +169,47 @@ export async function onRequestPost({ request, env }) {
             );
         }
 
-        const appointment = await env.DB.prepare(`
-            INSERT INTO appointments (
-                business_id,
-                service_id,
-                service_name,
-                price_cents,
-                duration_minutes,
-                customer_name,
-                customer_phone,
-                start_at,
-                end_at,
-                status
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed')
-            RETURNING id
-        `).bind(
-            businessId,
-            selectedService.id,
-            selectedService.name,
-            selectedService.price_cents,
-            duration,
-            name.trim(),
-            phone.trim(),
-            startAt,
-            endAt
-        ).first();
+const cancellationToken = generateCancellationToken();
+const cancellationTokenHash =
+    await hashCancellationToken(cancellationToken);
 
-        return Response.json({
-            ok: true,
-            appointmentId: appointment.id,
-            message: "Appointment booked successfully."
-        }, { status: 201 });
+const appointment = await env.DB.prepare(`
+    INSERT INTO appointments (
+        business_id,
+        service_id,
+        service_name,
+        price_cents,
+        duration_minutes,
+        customer_name,
+        customer_phone,
+        start_at,
+        end_at,
+        status,
+        cancellation_token_hash
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)
+    RETURNING id
+`).bind(
+    businessId,
+    selectedService.id,
+    selectedService.name,
+    selectedService.price_cents,
+    duration,
+    name.trim(),
+    phone.trim(),
+    startAt,
+    endAt,
+    cancellationTokenHash
+).first();
 
-    } catch (error) {
+return Response.json({
+    ok: true,
+    appointmentId: appointment.id,
+    cancellationToken: cancellationToken,
+    message: "Appointment booked successfully."
+}, { status: 201 });
+
+} catch (error) {
     if (error?.message?.includes("appointment_overlap")) {
         return Response.json(
             {
