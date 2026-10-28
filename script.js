@@ -83,13 +83,11 @@ function clearMessage() {
     bookingMessage.classList.remove("success");
 }
 
-// Handle form submission
-bookingForm.addEventListener("submit", (event) => {
+
+bookingForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    if (!bookingForm.reportValidity()) {
-        return;
-    }
+    if (!bookingForm.reportValidity()) return;
 
     if (!selectedService.value) {
         bookingMessage.textContent = "Please select a service first.";
@@ -97,40 +95,71 @@ bookingForm.addEventListener("submit", (event) => {
     }
 
     if (bookingDate.value < getLocalDate()) {
-        bookingMessage.textContent =
-            "Please choose today or a future date.";
+        bookingMessage.textContent = "Please choose today or a future date.";
         return;
     }
 
-const rawPhone = document
-    .querySelector("#customer-phone")
-    .value.trim();
+    const rawPhone = document
+        .querySelector("#customer-phone")
+        .value.trim();
 
-const normalizedPhone =
-    normalizeArgentineWhatsAppNumber(rawPhone);
+    const normalizedPhone =
+        normalizeArgentineWhatsAppNumber(rawPhone);
 
-if (!normalizedPhone) {
-    bookingMessage.textContent =
-        "Please enter a valid phone number. " +
-        "If your number includes the local 15 prefix, " +
-        "enter it in international format instead.";
-    return;
-}
+    if (!normalizedPhone) {
+        bookingMessage.textContent =
+            "Please enter a valid phone number.";
+        return;
+    }
 
-const booking = {
-    service: selectedService.value,
-    date: bookingDate.value,
-    time: bookingTime.value,
-    name: document.querySelector("#customer-name").value.trim(),
-    phone: normalizedPhone
-};
+    const booking = {
+        service: selectedService.value,
+        date: bookingDate.value,
+        time: bookingTime.value,
+        name: document.querySelector("#customer-name").value.trim(),
+        phone: normalizedPhone
+    };
 
-    bookingMessage.textContent =
-        `Form validated! ${booking.name}, you selected ` +
-        `${booking.service} for ${booking.date} at ${booking.time}. ` +
-        "This is only a prototype. Your appointment has not been saved.";
+    const submitButton = bookingForm.querySelector(
+        'button[type="submit"]'
+    );
 
-    bookingMessage.classList.add("success");
+    submitButton.disabled = true;
+    submitButton.textContent = "Booking...";
+    bookingMessage.textContent = "";
 
-    console.log("Prototype booking:", booking);
+    try {
+        const response = await fetch("/api/bookings", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(booking)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Booking failed.");
+        }
+
+        bookingMessage.textContent =
+            `Appointment confirmed! Your booking number is ${result.appointmentId}.`;
+
+        bookingMessage.classList.add("success");
+        bookingForm.reset();
+        selectedService.value = "";
+
+        serviceButtons.forEach((button) => {
+            button.textContent = "Select";
+            button.classList.remove("selected");
+        });
+
+    } catch (error) {
+        bookingMessage.textContent = error.message;
+        bookingMessage.classList.remove("success");
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Request Booking";
+    }
 });
