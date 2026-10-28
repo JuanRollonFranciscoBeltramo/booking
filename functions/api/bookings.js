@@ -185,9 +185,18 @@ export async function onRequestPost({ request, env }) {
         }, { status: 201 });
 
     } catch (error) {
+    if (error?.message?.includes("appointment_overlap")) {
         return Response.json(
-            { error: "Something went wrong while booking." },
-            { status: 500 }
+            {
+                error: "That time is already booked. Please choose another."
+            },
+            { status: 409 }
         );
     }
+
+    return Response.json(
+        { error: "Something went wrong while booking." },
+        { status: 500 }
+    );
+}
 }
